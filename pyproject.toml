@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "worker-bee"
+version = "0.1.0"
+description = "A lightweight, minimal AI agent framework"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "JuliaHZhu", email = "007@worklab.dev"}
+]
+keywords = ["ai", "agent", "llm", "tools", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.30.0",
+    "openai>=1.30.0",
+    "croniter>=1.4",
+]
+
+[project.optional-dependencies]
+swarm = ["nats-py>=2.0"]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[tool.setuptools]
+packages = ["worker_bee", "cron", "tools", "todo_ball_machine"]
+
+[tool.setuptools.package-data]
+worker_bee = ["*.py", "skills/*.md"]
+cron = ["*.py"]
+tools = ["*.py"]
+todo_ball_machine = ["*.py", "*.json", "*.md"]
+skills = ["*.md"]
+templates = ["*.md"]
+jobs = ["*.md", "*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "integration: integration tests that require a live LLM API or external service",
+    "slow: tests that take more than 5 seconds",
+]
+
+[project.scripts]
+worker-bee = "worker_bee.main:main"
+wb = "worker_bee.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/JuliaHZhu/worker-bee"
+Repository = "https://github.com/JuliaHZhu/worker-bee"

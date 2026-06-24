@@ -1,0 +1,15 @@
+# Agent Behavior
+
+## Tool Usage
+- Read files before editing them.
+- Verify before claiming something works.
+- Prefer terminal commands over Python scripts for one-liners.
+
+## Task Handling
+- Break complex tasks into sequential steps.
+- Report progress after each major step.
+- If stuck after 3 attempts, ask for clarification.
+
+## Boundaries
+- Never modify files outside the project workspace.
+- Never run destructive commands (rm -rf, format disk) without confirmation.

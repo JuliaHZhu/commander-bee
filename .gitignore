@@ -1,0 +1,46 @@
+# Runtime / sensitive
+config.json
+state.db
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Skill cache
+.skills_cache.json
+**/.skills_cache.json
+
+# Todo Ball Machine runtime data
+todo_ball_machine/daily_logs/
+todo_ball_machine/daily_draws/
+todo_ball_machine/blocks/
+todo_ball_machine/audit_logs/
+todo_ball_machine/cycle_stats.json
+todo_ball_machine/pool_state.json
+todo_ball_machine/test_heartbeat_log.json
+
+# Job board runtime data
+jobs/
+venv_tmp/
+.venv/

@@ -14,12 +14,37 @@ Agent 不直接 subscribe——收消息由 swarm/listener.py 后台进程负责
 import asyncio
 import json
 import os
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 
 from worker_bee.registry import registry
 
 
 # ── 配置 ──────────────────────────────────────────────
 NATS_URL = os.environ.get("SWARM_NATS_URL", "nats://localhost:4222")
+
+# 读取 config.json 获取 bee_id（setup 时已写入）
+_BEE_ID = None
+
+def _get_bee_id() -> str:
+    global _BEE_ID
+    if _BEE_ID is not None:
+        return _BEE_ID
+    try:
+        cfg = json.loads((Path.home() / ".worker-bee" / "config.json").read_text(encoding="utf-8"))
+        _BEE_ID = cfg.get("bee_id", "unknown-bee")
+    except Exception:
+        _BEE_ID = "unknown-bee"
+    return _BEE_ID
+
+# 每个 sender 的递增 sequence（重启后重置，timestamp + UUID 保证唯一性）
+_sender_sequence = 0
+
+def _next_sequence() -> int:
+    global _sender_sequence
+    _sender_sequence += 1
+    return _sender_sequence
 
 
 # ── 内部：连接 + 发送 + 断开 ──────────────────────────
@@ -47,23 +72,51 @@ async def _publish(subject: str, payload: dict):
     import nats
     nc = await nats.connect(NATS_URL)
     try:
-        await nc.publish(subject, json.dumps(payload, ensure_ascii=False).encode())
+        js = nc.jetstream()
+        envelope = {
+            "message_id": str(uuid.uuid4()),
+            "subject": subject,
+            "data": payload,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "sender": _get_bee_id(),
+            "sequence": _next_sequence(),
+        }
+        await js.publish(subject, json.dumps(envelope, ensure_ascii=False).encode())
     finally:
         await nc.drain()
 
 
-async def _request(subject: str, payload: dict, timeout: int):
+async def _request(subject: str, payload: dict, timeout: int, retries: int = 3):
     import nats
-    nc = await nats.connect(NATS_URL)
-    try:
-        resp = await nc.request(
-            subject,
-            json.dumps(payload, ensure_ascii=False).encode(),
-            timeout=timeout,
-        )
-        return resp.data.decode()
-    finally:
-        await nc.drain()
+    envelope = {
+        "message_id": str(uuid.uuid4()),
+        "subject": subject,
+        "data": payload,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "sender": _get_bee_id(),
+        "sequence": _next_sequence(),
+    }
+    last_error = None
+    for attempt in range(1, retries + 1):
+        nc = await nats.connect(NATS_URL)
+        try:
+            resp = await nc.request(
+                subject,
+                json.dumps(envelope, ensure_ascii=False).encode(),
+                timeout=timeout,
+            )
+            return resp.data.decode()
+        except asyncio.TimeoutError:
+            last_error = f"Timeout (attempt {attempt}/{retries})"
+            if attempt < retries:
+                await asyncio.sleep(1)
+        except Exception as e:
+            last_error = f"{type(e).__name__}: {e} (attempt {attempt}/{retries})"
+            if attempt < retries:
+                await asyncio.sleep(1)
+        finally:
+            await nc.drain()
+    raise Exception(f"swarm_request failed after {retries} retries. Last error: {last_error}")
 
 
 # ── 工具 1：发布（广播）───────────────────────────────
@@ -93,15 +146,15 @@ def swarm_publish(subject: str, payload: dict) -> str:
 
 # ── 工具 2：请求（问答）───────────────────────────────
 
-def swarm_request(subject: str, payload: dict, timeout: int = 10) -> str:
-    """向蜂群发出请求并等待单个回复。用于查询场景。
+def swarm_request(subject: str, payload: dict, timeout: int = 60) -> str:
+    """向蜂群发出请求并等待单个回复。用于查询场景。60秒超时，失败自动重试3次。
     
     参数:
         subject: NATS subject，格式 swarm.query.{服务名}
                  示例: swarm.query.vector-search, swarm.query.status
         payload: JSON 可序列化的请求体
                  示例: {"query": "agent architecture", "top_k": 5}
-        timeout: 超时秒数（默认 10）。超时返回错误。
+        timeout: 超时秒数（默认 60）。超时返回错误。
     
     返回: 回复的 JSON 字符串，或超时/错误信息。
     

@@ -12,7 +12,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from worker_bee.registry import registry
+from agent.registry import registry
 
 _LARK_CLI = shutil.which("lark-cli") or str(Path.home() / ".local" / "bin" / "lark-cli")
 _CONFIG = Path.home() / ".worker-bee" / "config.json"

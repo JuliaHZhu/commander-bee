@@ -3,8 +3,8 @@
 Uses monkeypatch to mock API calls so we don't need a real LLM.
 """
 import pytest
-from worker_bee.agent import AIAgent
-from worker_bee.deck import Deck
+from agent.agent import AIAgent
+from agent.deck import Deck
 
 
 @pytest.fixture

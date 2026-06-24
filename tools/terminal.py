@@ -5,8 +5,8 @@ import os
 import re
 import shlex
 import subprocess
-from worker_bee.registry import registry
-from worker_bee.safety import allow_command, is_dangerous_command
+from agent.registry import registry
+from agent.safety import allow_command, is_dangerous_command
 
 # Re-export for backward-compat with tests
 _matches_allowlist = allow_command
@@ -73,7 +73,7 @@ def sys_terminal(command: str, timeout: int = 30, require_confirmation: bool = T
                 )
         return (
             f"Blocked: unrecognized command (not in allowlist): {command}\n"
-            f"Add it to the allowlist in worker_bee/safety.py ALLOWLIST, "
+            f"Add it to the allowlist in agent/safety.py ALLOWLIST, "
             f"or set WORKER_BEE_AUTO_CONFIRM=true in sandboxed environments."
         )
 

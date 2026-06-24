@@ -39,7 +39,7 @@ def _parse_frontmatter(content: str) -> Tuple[Optional[dict], str]:
     if not m:
         return None, content
     try:
-        from worker_bee.skills import _parse_yamlish
+        from agent.skills import _parse_yamlish
         meta = _parse_yamlish(m.group(1))
     except Exception:
         meta = {}
@@ -161,7 +161,7 @@ def _scan_sessions_for_jobs() -> List[Tuple[str, str, int]]:
     Returns: [(session_id, job_id, message_count), ...]
     """
     try:
-        from worker_bee.memory import SessionDB
+        from agent.memory import SessionDB
         db = SessionDB()
     except Exception:
         return []
@@ -184,7 +184,7 @@ def _scan_sessions_for_jobs() -> List[Tuple[str, str, int]]:
 def _generate_session_summary(session_id: str, job_id: str) -> str:
     """Generate summary from session messages for handoff."""
     try:
-        from worker_bee.memory import SessionDB
+        from agent.memory import SessionDB
         db = SessionDB()
         msgs = db.get_messages(session_id, include_archived=False)
     except Exception:
@@ -391,7 +391,7 @@ def probe_handoff(job_id: str) -> str:
 
 # ── Registry ────────────────────────────────────────────────────────
 try:
-    from worker_bee.registry import registry
+    from agent.registry import registry
 
     registry.register(
         name="probe_create_job",

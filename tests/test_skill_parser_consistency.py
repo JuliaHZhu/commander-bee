@@ -1,6 +1,6 @@
 """#5 — skills.py and skill_audition.py must parse the same frontmatter identically."""
 import pytest
-from worker_bee.skills import _parse_yamlish
+from agent.skills import _parse_yamlish
 from tools.skill_audition import _parse_frontmatter
 
 

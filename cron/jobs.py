@@ -565,6 +565,7 @@ def create_job(
         "origin": origin,
         "enabled_toolsets": normalized_toolsets,
         "workdir": normalized_workdir,
+        "retry_count": 0,
     }
 
     with _cross_process_lock():
@@ -786,6 +787,56 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
                 return
 
         logger.warning("mark_job_run: job_id %s not found, skipping save", job_id)
+
+
+def mark_job_rate_limited(job_id: str, retry_delay_minutes: int = 10):
+    """Mark a job as rate-limited and schedule retry.
+
+    Sets state='rate_limited' and next_run_at = now + retry_delay_minutes.
+    Increments retry_count. If retry_count > 10, marks as failed instead.
+    """
+    with _jobs_file_lock:
+        jobs = load_jobs()
+        for job in jobs:
+            if job["id"] == job_id:
+                retry_count = job.get("retry_count", 0) + 1
+                if retry_count > 10:
+                    job["state"] = "error"
+                    job["last_status"] = "error"
+                    job["last_error"] = f"Rate limited {retry_count} times. Giving up."
+                    job["retry_count"] = retry_count
+                else:
+                    job["state"] = "rate_limited"
+                    job["retry_count"] = retry_count
+                    job["next_run_at"] = (_now() + timedelta(minutes=retry_delay_minutes)).isoformat()
+                    job["last_error"] = f"Rate limited (retry {retry_count}/10, next try at {job['next_run_at']})"
+                save_jobs(jobs)
+                return
+        logger.warning("mark_job_rate_limited: job_id %s not found", job_id)
+
+
+def retry_rate_limited_jobs() -> List[str]:
+    """Find all rate_limited jobs and reset their next_run_at to now.
+
+    Returns list of retried job IDs.
+    """
+    with _jobs_file_lock:
+        jobs = load_jobs()
+        retried = []
+        now = _now().isoformat()
+        for job in jobs:
+            if job.get("state") == "rate_limited":
+                job["next_run_at"] = now
+                job["state"] = "scheduled"
+                retried.append(job["id"])
+        if retried:
+            save_jobs(jobs)
+        return retried
+
+
+def get_rate_limited_jobs() -> List[Dict[str, Any]]:
+    """Get all jobs currently in rate_limited state."""
+    return [_normalize_job_record(j) for j in load_jobs() if j.get("state") == "rate_limited"]
 
 
 def advance_next_run(job_id: str) -> bool:

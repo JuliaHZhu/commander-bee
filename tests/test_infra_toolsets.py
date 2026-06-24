@@ -1,5 +1,5 @@
 """Tests for InfraToolSet — linux-only, no platform filtering."""
-from worker_bee.infra_toolsets import InfraToolSet
+from agent.infra_toolsets import InfraToolSet
 
 
 class TestPlatformDetection:

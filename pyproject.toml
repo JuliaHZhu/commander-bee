@@ -37,10 +37,10 @@ test = [
 ]
 
 [tool.setuptools]
-packages = ["worker_bee", "cron", "tools", "todo_ball_machine"]
+packages = ["agent", "cron", "tools", "todo_ball_machine"]
 
 [tool.setuptools.package-data]
-worker_bee = ["*.py", "skills/*.md"]
+agent = ["*.py", "skills/*.md"]
 cron = ["*.py"]
 tools = ["*.py"]
 todo_ball_machine = ["*.py", "*.json", "*.md"]
@@ -57,8 +57,8 @@ markers = [
 ]
 
 [project.scripts]
-worker-bee = "worker_bee.main:main"
-wb = "worker_bee.cli:main"
+worker-bee = "agent.main:main"
+wb = "agent.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/JuliaHZhu/worker-bee"

@@ -3,7 +3,7 @@
 import os
 import pytest
 
-from worker_bee.skills import SkillManager, _parse_yamlish
+from agent.skills import SkillManager, _parse_yamlish
 
 
 class TestYAMLParser:

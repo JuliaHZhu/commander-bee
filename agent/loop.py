@@ -7,8 +7,8 @@ are handled by the Protocol object passed in.
 from typing import Dict, List, Optional
 import time
 
-from worker_bee.registry import registry
-from worker_bee.audit import log_tool_call
+from agent.registry import registry
+from agent.audit import log_tool_call
 
 
 def _trim_messages(messages, max_len=60):

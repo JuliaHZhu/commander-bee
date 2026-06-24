@@ -1,21 +1,21 @@
 """Minimal AI Agent — thin shell delegating to protocols + loop.
 
-Backward-compatible: ``from worker_bee.agent import AIAgent`` still works.
+Backward-compatible: ``from agent.agent import AIAgent`` still works.
 Internal methods (_build_tools, _to_api_messages) are preserved as forwarders
 so existing tests don't break.
 
 Architecture:
-    worker_bee/agent.py      ← this file — AIAgent class, config, tool schema caching
-    worker_bee/protocols.py  ← AnthropicProtocol / OpenAIProtocol — all format details
-    worker_bee/loop.py       ← run_conversation() — protocol-agnostic agent loop
+    agent/agent.py      ← this file — AIAgent class, config, tool schema caching
+    agent/protocols.py  ← AnthropicProtocol / OpenAIProtocol — all format details
+    agent/loop.py       ← run_conversation() — protocol-agnostic agent loop
 """
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from worker_bee.loop import run_conversation as _run_conversation
-from worker_bee.protocols import AnthropicProtocol, OpenAIProtocol, Protocol
-from worker_bee.registry import registry
+from agent.loop import run_conversation as _run_conversation
+from agent.protocols import AnthropicProtocol, OpenAIProtocol, Protocol
+from agent.registry import registry
 
 
 def _load_prompt_files() -> str:

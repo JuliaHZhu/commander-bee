@@ -33,11 +33,7 @@ ACTIVE EVERY RESPONSE。加载后整场对话保持蜂群感知。
 | 学到值得共享的知识 | `swarm.event.discovery` | `{topic, insight, source}` |
 | 长时间没活动后恢复 | `swarm.heartbeat.<bee-id>` | `{status, current_job}` |
 
-```
-swarm_publish("swarm.event.job-done", {"job_id": "JOB-003", "title": "重构 auth", "summary": "..."})
-```
-
-`swarm_publish` 是 fire-and-forget——发送即忘，不等待确认。
+`swarm_publish` 是 fire-and-forget——发送即忘，不等待确认。每条消息自动包含 message_id + sequence + sender + timestamp。
 
 ### 2. 求助——不懂的先问蜂群
 

@@ -18,7 +18,7 @@ category: swarm
    读 `mailbox/inbox/` 目录，按文件名排序（时间戳在文件名里）
 
 2. **逐个处理**（每次最多处理 20 条，防 token 爆炸）
-   每条消息是 JSON：`{subject, reply_to, data, timestamp, sender}`
+   每条消息是 JSON：`{message_id, subject, reply_to, data, timestamp, sender, sequence}`
 
 3. **按 subject 前缀分类处理**：
 

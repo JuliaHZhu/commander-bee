@@ -3,7 +3,7 @@ import os
 import json
 import concurrent.futures
 from typing import List, Dict, Optional
-from worker_bee.registry import registry
+from agent.registry import registry
 
 
 def _make_agent_config(
@@ -55,7 +55,7 @@ def _make_agent_config(
 
 def _run_single_agent(config: dict, messages: List[Dict]) -> str:
     """Instantiate AIAgent and run one-shot."""
-    from worker_bee.agent import AIAgent
+    from agent.agent import AIAgent
     agent = AIAgent(config)
     return agent.run(messages)
 

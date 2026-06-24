@@ -1,107 +1,87 @@
-"""deck_manage — Agent 查询和控制 Deck 模式的工具。
+"""deck_manage — 薄执行层，让 Agent 能够查询和操作 Deck。
 
-提供给 Agent 查询当前 Deck 状态、切换模式的能力。
-不提供 add/drop 单个工具的能力（设计上不支持）。
+调用链：
+  Agent → deck_manage Tool → DeckManager → 文件/内存
 """
-import json
-import subprocess
-from pathlib import Path
+from agent.main import load_config
+from agent.deck import DeckManager
+from agent.registry import registry
 
 
-def deck_manage(action: str) -> dict:
-    """Deck 管理工具。
-    
+def deck_manage(action: str, tool_name: str = "") -> str:
+    """Manage the current Deck — query mode, switch mode, or modify tools.
+
     Args:
-        action: 操作类型
-            - "status": 查询当前 Deck 模式和统计
-            - "set_full": 切换到全工具模式
-            - "set_focus": 切换到专注模式
-            - "set_auto": 切换到自动模式（默认）
-    
+        action: One of — mode, full, focus, add, drop, reset, list, log
+        tool_name: Required for 'add' and 'drop' actions
+
     Returns:
-        操作结果
+        Human-readable result string.
     """
-    config_path = Path.home() / ".worker-bee" / "config.json"
-    
-    if action == "status":
-        # 读取当前模式
-        if config_path.exists():
-            with open(config_path) as f:
-                config = json.load(f)
-            mode = config.get("deck_mode", "auto")
-        else:
-            mode = "auto"
-        
-        # 读取最近的 log 统计
-        log_path = Path.home() / ".worker-bee" / "deck_log.jsonl"
-        if log_path.exists():
-            with open(log_path) as f:
-                lines = f.readlines()
-            recent = [json.loads(line) for line in lines[-5:]]
-        else:
-            recent = []
-        
-        return {
-            "current_mode": mode,
-            "description": {
-                "auto": "Full mode when no skills matched, focus mode otherwise",
-                "full": "Always use all config.tools",
-                "focus": "Always use skill tools + redundancy only"
-            }[mode],
-            "recent_runs": recent,
-        }
-    
-    elif action in ["set_full", "set_focus", "set_auto"]:
-        # 提取目标模式
-        target_mode = action.replace("set_", "")
-        
-        # 写入配置
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        if config_path.exists():
-            with open(config_path) as f:
-                config = json.load(f)
-        else:
-            config = {}
-        
-        old_mode = config.get("deck_mode", "auto")
-        config["deck_mode"] = target_mode
-        
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=2)
-        
-        return {
-            "success": True,
-            "old_mode": old_mode,
-            "new_mode": target_mode,
-            "message": f"Deck mode changed from {old_mode} to {target_mode}",
-        }
-    
-    else:
-        return {
-            "error": f"Unknown action: {action}",
-            "valid_actions": ["status", "set_full", "set_focus", "set_auto"],
-        }
+    cfg = load_config() or {}
+    dm = DeckManager(cfg.get("tools", []), registry)
 
+    action = action.lower().strip()
 
-# ── Registry ──────────────────────────────────────────────────────────────────────────
+    if action == "mode":
+        tools = dm.list_tools()
+        return f"Mode: {dm.mode}\nTools ({len(tools)}): {', '.join(tools) if tools else '(none)'}"
 
-from worker_bee.registry import registry
+    if action == "full":
+        return dm.set_mode("full")
+
+    if action == "focus":
+        return dm.set_mode("focus")
+
+    if action == "add":
+        if not tool_name:
+            return "Error: tool_name is required for 'add' action"
+        return dm.add_tool(tool_name)
+
+    if action == "drop":
+        if not tool_name:
+            return "Error: tool_name is required for 'drop' action"
+        return dm.drop_tool(tool_name)
+
+    if action == "reset":
+        return dm.reset()
+
+    if action == "list":
+        tools = dm.list_tools()
+        return f"Tools ({len(tools)}): {', '.join(tools) if tools else '(none)'}"
+
+    if action == "log":
+        import json
+        return json.dumps(dm.get_log(), ensure_ascii=False, indent=2)
+
+    return (
+        f"Unknown action: '{action}'. "
+        f"Available: mode, full, focus, add, drop, reset, list, log"
+    )
+
 
 registry.register(
     name="deck_manage",
-    description="Query and control Deck mode. Use 'status' to check current mode, 'set_*' to switch modes.",
+    description=(
+        "Manage the Agent's tool Deck — control which tools are available. "
+        "Actions: mode (show status), full (all tools), focus (skill-only), "
+        "add <tool>, drop <tool>, reset (re-match skills), list (show tools), log (stats)."
+    ),
     parameters={
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["status", "set_full", "set_focus", "set_auto"],
-                "description": "Action: status (query), set_full/set_focus/set_auto (switch mode)",
+                "description": "Action to perform: mode, full, focus, add, drop, reset, list, log",
+            },
+            "tool_name": {
+                "type": "string",
+                "description": "Tool name (required for add/drop)",
+                "default": "",
             },
         },
         "required": ["action"],
     },
     handler=deck_manage,
-    tags=["deck", "mode"],
-    category="infra",
+    tags=["meta", "deck", "boundary"],
+    category="meta",
 )
-

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NATS 蜂群通信 PRD</title>
+<style>
+:root{--bg:#fdfbf7;--text:#2c2416;--accent:#8b4513;--border:#c4a882;--code-bg:#f5f0e8}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Noto Serif SC","STSong",serif;line-height:1.85;color:var(--text);background:var(--bg);max-width:760px;margin:0 auto;padding:40px 24px}
+h1{font-size:1.5rem;text-align:center;margin-bottom:4px;color:#6b3410}
+.subtitle{text-align:center;font-size:.9rem;color:#8b7355;margin-bottom:32px}
+.back{text-align:center;font-size:.85rem;margin-bottom:16px}
+.back a{color:var(--accent);text-decoration:none}
+h2{font-size:1.2rem;color:#6b3410;border-bottom:1px solid var(--border);padding-bottom:4px;margin:40px 0 16px}
+h3{font-size:1rem;color:var(--accent);margin:24px 0 8px}
+p{margin:10px 0;font-size:.93rem}
+strong{color:#6b3410}
+code{background:var(--code-bg);padding:1px 5px;border-radius:3px;font-size:.88em}
+pre{background:var(--code-bg);padding:14px 18px;border-radius:6px;border:1px solid var(--border);overflow-x:auto;margin:12px 0;font-size:.83rem;line-height:1.55}
+pre code{padding:0;background:none}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9rem}
+th{background:#f0e8d8;text-align:left;padding:8px 12px;border:1px solid var(--border);font-weight:bold}
+td{padding:8px 12px;border:1px solid var(--border)}
+tr:nth-child(even) td{background:#fdfaf5}
+.tag{display:inline-block;background:#f0e8d8;color:#8b7355;padding:1px 8px;border-radius:10px;font-size:.78em;margin-left:6px}
+.takeaway{background:#faf3e4;border-left:3px solid var(--accent);padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:.9rem}
+ul,ol{margin:8px 0 8px 20px;font-size:.9rem}
+li{margin:4px 0}
+.footer{text-align:center;margin-top:48px;padding-top:16px;border-top:1px solid var(--border);font-size:.82rem;color:#c4a882}
+.related{text-align:center;font-size:.85rem;margin-top:24px;padding:12px;background:#faf3e4;border-radius:6px}
+</style>
+</head>
+<body>
+<p class="back"><a href="../worker-bee.html">← Worker Bee</a></p>
+<h1>NATS 蜂群通信 PRD</h1>
+<p class="subtitle">Product Requirements Document</p>
+
+<div class="related">
+  <strong>相关文档：</strong>
+  <a href="nats-commander.html">NATS 蜂群通信（设计文档）</a>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>Problem Statement</h2>
+
+<p>Worker Bee 需要跨机器协同：Commander Bee 派发工单、Worker Bee 互相通知、World Bee 提供信息支持。当前缺少轻量级的跨机器消息总线。</p>
+
+<p><strong>需求：</strong></p>
+<ul>
+  <li>轻量 pub/sub 消息总线，支持跨机器路由</li>
+  <li>Agent 不直接 subscribe（保持 Tool/Skill 分离）</li>
+  <li>消息持久化到文件，Agent 读文件处理</li>
+  <li>支持 fire-and-forget（事件广播）和 request-reply（查询信息）两种模式</li>
+  <li>保证消息送达（at-least-once）</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>Solution</h2>
+
+<p>引入 <strong>NATS 消息总线 + swarm_listener 文件写入</strong>：</p>
+
+<ol>
+  <li><strong>NATS Server</strong>：轻量 pub/sub 总线，端口 4222，手动配置集群</li>
+  <li><strong>swarm_listener</strong>：独立 asyncio 进程，订阅 NATS → 写 JSON 文件到 <code>mailbox/inbox/</code></li>
+  <li><strong>swarm_publish / swarm_request</strong>：两个 Tool，Agent 通过它们发消息</li>
+  <li><strong>Agent 读 mailbox</strong>：和读 Job Board 一样，所有状态在文件里</li>
+</ol>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>User Stories</h2>
+
+<ol>
+  <li>作为 Worker Bee，我希望能通过 <code>swarm_publish</code> 向蜂群广播事件（如"工单完成"），其他 Bee 能收到</li>
+  <li>作为 Worker Bee，我希望能通过 <code>swarm_request</code> 向 World Bee 查询信息，60 秒内得到回复</li>
+  <li>作为 Commander Bee，我希望能通过 NATS 向特定 Worker Bee 派发工单</li>
+  <li>作为 Worker Bee，我希望收到的消息保存在 <code>mailbox/inbox/</code>，我随时可以读取</li>
+  <li>作为用户，我希望 swarm_listener 重启后不会丢消息（NATS 缓存机制）</li>
+  <li>作为用户，我希望启动时检查 <code>bee_id</code> 唯一性，重复就报错</li>
+  <li>作为用户，我希望 <code>swarm_request</code> 超时后自动重试 3 次，都失败后停在那等人工介入</li>
+  <li>作为用户，我希望 NATS cluster 手动配置，不自动发现</li>
+  <li>作为用户，我希望消息带 UUID 或 datetime 序列号，保证顺序</li>
+  <li>作为用户，我希望跨机器文件传输用 HTTP（不是 NATS 消息），下载到本地后再处理</li>
+</ol>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>Implementation Decisions</h2>
+
+<h3>核心架构</h3>
+
+<table>
+  <tr><th>组件</th><th>文件</th><th>职责</th></tr>
+  <tr><td>NATS Server</td><td><code>swarm/server.conf</code></td><td>轻量消息总线，端口 4222。手动配置集群（routes、cluster_name）</td></tr>
+  <tr><td>swarm_listener</td><td><code>swarm/listener.py</code></td><td>独立 asyncio 进程。订阅 NATS → 收消息 → 写 JSON 到 <code>mailbox/inbox/</code>，文件名用 UUID</td></tr>
+  <tr><td>swarm_publish</td><td><code>tools/swarm.py</code></td><td>fire-and-forget，保证送达（NATS at-least-once）</td></tr>
+  <tr><td>swarm_request</td><td><code>tools/swarm.py</code></td><td>request-reply，60 秒超时，重试 3 次</td></tr>
+</table>
+
+<h3>消息格式</h3>
+
+<p>JSON envelope：</p>
+
+<pre><code>{
+  "message_id": "550e8400-e29b-41d4-a716-446655440000",
+  "subject": "swarm.event.job-done",
+  "reply_to": "",
+  "data": {"job_id": "JOB-047", "summary": "完成拆解"},
+  "timestamp": "2026-06-23T14:30:00Z",
+  "sender": "bee-mac",
+  "sequence": 12345
+}</code></pre>
+
+<p><code>message_id</code> 用 UUID，<code>sequence</code> 用递增整数（同一 sender 内递增），保证顺序。</p>
+
+<h3>Mailbox 结构</h3>
+
+<pre><code>~/.worker-bee/mailbox/
+├── inbox/                  ← swarm_listener 写入，保留 3 个月
+│   ├── 550e8400-e29b-41d4-a716-446655440000.json
+│   └── 7c9e6679-7425-40de-944b-e07fc1f90ae7.json
+└── read/                   ← Agent 处理完后移入（可选）
+</code></pre>
+
+<p><strong>文件名 = message_id (UUID)</strong>，避免冲突。</p>
+
+<p><strong>保留策略：</strong>inbox/ 保留 3 个月，不自动清理。手动归档或删除。</p>
+
+<h3>bee_id 唯一性校验</h3>
+
+<p>启动时：</p>
+<ol>
+  <li>读 <code>config.json</code> 中的 <code>bee_id</code></li>
+  <li>向 NATS 发 <code>swarm.heartbeat.&lt;bee_id&gt;</code>，包含 <code>{"action": "check_conflict"}</code></li>
+  <li>等 2 秒，如果收到同 bee_id 的回复 → 报错退出</li>
+  <li>否则继续启动</li>
+</ol>
+
+<p>定期心跳（每 30 秒）发 <code>swarm.heartbeat.&lt;bee_id&gt;</code>，包含当前能力清单。</p>
+
+<h3>request-reply 超时与重试</h3>
+
+<p><code>swarm_request</code> 参数：</p>
+
+<pre><code>{
+  "subject": "swarm.query.vector-search",
+  "data": {"query": "PLSSEM 量表"},
+  "timeout": 60,
+  "retries": 3
+}</code></pre>
+
+<p>重试逻辑：</p>
+<ol>
+  <li>发送请求，等 60 秒</li>
+  <li>超时 → 重试，再等 60 秒</li>
+  <li>3 次都超时 → 返回 <code>{"status": "timeout", "message": "3 次重试均失败，请检查目标 Bee 状态"}</code></li>
+  <li>Agent 看到 timeout → 停止任务，通知用户</li>
+</ol>
+
+<h3>NATS cluster 配置</h3>
+
+<p><code>swarm/server.conf</code> 示例（3 台机器）：</p>
+
+<pre><code># 机器 A（Mac）
+port: 4222
+http_port: 8222
+cluster {
+  name: worker-bee-cluster
+  listen: 0.0.0.0:6222
+  routes: [
+    nats://192.168.1.101:6222  # 机器 B
+    nats://192.168.1.102:6222  # 机器 C
+  ]
+}
+
+# 机器 B / C 类似，routes 指向其他机器
+</code></pre>
+
+<p>手动配置，不自动发现。启动后 NATS 自动跨机器路由。</p>
+
+<h3>消息顺序保证</h3>
+
+<p>每条消息包含：</p>
+<ul>
+  <li><code>timestamp</code>：ISO 8601 格式</li>
+  <li><code>sequence</code>：同一 sender 内递增的整数</li>
+</ul>
+
+<p>Agent 读 mailbox 时按 <code>sequence</code> 排序，保证顺序。</p>
+
+<h3>跨机器文件传输</h3>
+
+<p>不通过 NATS 发大文件。改用 HTTP：</p>
+
+<ol>
+  <li>Sender 通过 HTTP 服务暴露文件（如 <code>http://192.168.1.100:8080/files/report.pdf</code>）</li>
+  <li>通过 NATS 发消息：<code>{"file_url": "http://...", "action": "download"}</code></li>
+  <li>Receiver 读 mailbox → 看到 file_url → 用 HTTP 下载到本地</li>
+</ol>
+
+<p>HTTP 服务：Python <code>http.server</code> 或 nginx。</p>
+
+<h3>Tool / Skill 封装</h3>
+
+<table>
+  <tr><th>层级</th><th>名称</th><th>职责</th></tr>
+  <tr><td><strong>Tool</strong></td><td><code>swarm_publish</code></td><td>fire-and-forget，保证送达</td></tr>
+  <tr><td><strong>Tool</strong></td><td><code>swarm_request</code></td><td>request-reply，60s × 3 次重试</td></tr>
+  <tr><td><strong>Skill</strong></td><td><code>swarm-send</code></td><td>教 Agent 什么时候用 publish vs request</td></tr>
+  <tr><td><strong>Skill</strong></td><td><code>swarm-receive</code></td><td>教 Agent 读 mailbox 并分类处理</td></tr>
+  <tr><td><strong>Skill</strong></td><td><code>swarm-awareness</code></td><td>持久蜂群感知——主动广播/求助</td></tr>
+  <tr><td><strong>Skill</strong></td><td><code>mail-to-job</code></td><td>读 mailbox → 创建 job → 通知用户</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>Testing Decisions</h2>
+
+<h3>测试场景</h3>
+
+<ol>
+  <li><strong>单机 publish</strong>：Agent 调 swarm_publish → listener 写文件 → 验证 inbox/ 有消息</li>
+  <li><strong>request-reply 成功</strong>：Agent A 调 swarm_request → Agent B 回复 → A 收到回复</li>
+  <li><strong>request 超时重试</strong>：Agent A 调 swarm_request，B 不回复 → 60s 超时 → 重试 3 次 → 返回 timeout</li>
+  <li><strong>bee_id 冲突检测</strong>：两个 Agent 用同一 bee_id 启动 → 后启动的报错退出</li>
+  <li><strong>listener 重启不丢消息</strong>：发消息时 listener 挂掉 → 重启后 NATS 补发 → 消息写入 inbox/</li>
+  <li><strong>消息顺序</strong>：快速连发 3 条消息 → 验证 inbox/ 文件按 sequence 排序</li>
+  <li><strong>跨机器路由</strong>：机器 A 发消息 → 机器 B 的 listener 收到 → 写入 B 的 inbox/</li>
+  <li><strong>HTTP 文件下载</strong>：A 发 file_url 消息 → B 读 mailbox → HTTP 下载到本地 → 验证文件内容</li>
+</ol>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>Out of Scope</h2>
+
+<ul>
+  <li><strong>自动发现 NATS cluster</strong>：手动配置 routes</li>
+  <li><strong>消息加密</strong>：本次不做，后续可加 TLS</li>
+  <li><strong>消息优先级</strong>：NATS 不支持，后续可用多个 subject 模拟</li>
+  <li><strong>自动清理 inbox/</strong>：保留 3 个月，手动归档</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>Implementation Checklist</h2>
+
+<table>
+  <tr><th>#</th><th>项</th><th>文件</th></tr>
+  <tr><td>1</td><td>config.json 加 <code>bee_id</code> 字段</td><td><code>config.json</code></td></tr>
+  <tr><td>2</td><td>实现 bee_id 冲突检测（启动时 + 心跳）</td><td><code>swarm/listener.py</code></td></tr>
+  <tr><td>3</td><td>swarm_request 加 timeout/retries 参数</td><td><code>tools/swarm.py</code></td></tr>
+  <tr><td>4</td><td>消息 envelope 加 message_id (UUID) + sequence</td><td><code>tools/swarm.py</code></td></tr>
+  <tr><td>5</td><td>listener 写文件用 message_id 作为文件名</td><td><code>swarm/listener.py</code></td></tr>
+  <tr><td>6</td><td>编写 <code>swarm-send</code> / <code>swarm-receive</code> / <code>mail-to-job</code> Skill</td><td><code>skills/</code></td></tr>
+  <tr><td>7</td><td>NATS cluster 配置模板（3 台机器）</td><td><code>swarm/server.conf</code></td></tr>
+  <tr><td>8</td><td>HTTP 文件服务启动脚本</td><td><code>swarm/file_server.py</code></td></tr>
+  <tr><td>9</td><td>跑测试（单机 + 跨机器）</td><td><code>tests/test_swarm.py</code></td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>Further Notes</h2>
+
+<p class="takeaway"><strong>核心理念：</strong>Agent 不直接 subscribe（Tool/Skill 分离）。消息持久化到文件，Agent 读文件处理。NATS 是消息总线，不是状态存储。</p>
+
+<p><strong>可靠性：</strong>NATS at-least-once 保证 + listener 写文件 + 3 个月保留 = 消息不会丢。</p>
+
+<p><strong>扩展性：</strong>手动配置 cluster，支持 5-10 台机器。更大规模需要 NATS JetStream。</p>
+
+<div class="related">
+  <strong>相关文档：</strong>
+  <a href="nats-commander.html">NATS 蜂群通信（设计文档）</a> ·
+  <a href="commanderbee.html">CommanderBee 设计</a>
+</div>
+
+<div class="footer">
+  <p>2026-06-24 · 由 nats-commander.html grilling 后生成</p>
+</div>
+</body>
+</html>

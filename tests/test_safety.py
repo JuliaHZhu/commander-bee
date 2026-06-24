@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from worker_bee import safety as safety_mod
+from agent import safety as safety_mod
 
 
 class TestWriteDenylist:

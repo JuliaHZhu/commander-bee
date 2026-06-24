@@ -35,5 +35,6 @@ category: swarm
 ## 约束
 
 - 不要用 `swarm_request` 发不需要回复的消息（浪费等待）
-- `swarm_request` 超时报错是正常的——notify 用户，不要重试超过 1 次
+- `swarm_request` 默认60秒超时，失败自动重试3次，都失败则返回错误告知用户
 - `swarm_publish` 是 fire-and-forget，返回成功只代表 NATS 收到，不代表对端处理完
+- 每条消息自动包含 message_id + sequence + sender(bee_id) + timestamp

@@ -6,8 +6,8 @@ import os
 import re
 import shutil
 from pathlib import Path
-from worker_bee.registry import registry
-from worker_bee.safety import is_write_denied, is_self_modify_target
+from agent.registry import registry
+from agent.safety import is_write_denied, is_self_modify_target
 
 # Re-export for backward-compat with tests
 _is_sensitive = is_write_denied
@@ -108,7 +108,7 @@ def fs_rollback_file(path: str, steps: int = 1) -> str:
 
 def fs_git_rollback(path: str) -> str:
     """Restore the working tree from the most recent auto-stash checkpoint."""
-    from worker_bee.safety import git_rollback
+    from agent.safety import git_rollback
     repo_dir = str(Path(path).expanduser().parent)
     return git_rollback(repo_dir)
 

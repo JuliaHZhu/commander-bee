@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from worker_bee.memory import SessionDB
+from agent.memory import SessionDB
 from todo_ball_machine.engine import Engine
 
 

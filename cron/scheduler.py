@@ -32,11 +32,13 @@ from cron.jobs import (
     mark_job_run,
     save_job_output,
     advance_next_run,
+    mark_job_rate_limited,
+    retry_rate_limited_jobs,
     OUTPUT_DIR,
     CRON_DIR,
 )
 
-from worker_bee.workspace import get_workspace
+from agent.workspace import get_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -408,7 +410,7 @@ def run_job(job: dict, default_config: dict, skill_manager=None) -> None:
             # Inject pending tasks assigned to this job
             task_context = ""
             try:
-                from worker_bee.memory import SessionDB
+                from agent.memory import SessionDB
                 db = SessionDB()
                 pending = db.get_pending_tasks_for_job(job_id)
                 if pending:
@@ -441,7 +443,7 @@ def run_job(job: dict, default_config: dict, skill_manager=None) -> None:
                 if toolsets:
                     agent_config["tools"] = toolsets
 
-                from worker_bee.agent import AIAgent
+                from agent.agent import AIAgent
 
                 agent = AIAgent(agent_config)
                 messages = [{"role": "user", "content": full_prompt}]
@@ -452,6 +454,18 @@ def run_job(job: dict, default_config: dict, skill_manager=None) -> None:
         logger.exception("Job '%s' failed: %s", job_name, e)
         error = str(e)
         output = f"Error: {e}"
+
+        # Rate-limit detection: auto-retry in 10 minutes
+        err_lower = error.lower()
+        is_rate_limit = any(k in err_lower for k in (
+            "rate limit", "ratelimit", "429", "too many requests",
+            "rate_limit_exceeded", "insufficient_quota"
+        ))
+        if is_rate_limit:
+            logger.warning("Job '%s' hit rate limit. Scheduling retry in 10 min.", job_name)
+            mark_job_rate_limited(job_id, retry_delay_minutes=10)
+            # Skip mark_job_run — mark_job_rate_limited already updated state
+            return
 
     # Save output
     save_job_output(job_id, output)
@@ -493,6 +507,14 @@ def tick(default_config: dict, skill_manager=None) -> int:
         return 0
 
     try:
+        # ── Retry rate-limited jobs immediately ──
+        try:
+            retried = retry_rate_limited_jobs()
+            if retried:
+                logger.info("Retried %d rate-limited job(s): %s", len(retried), ", ".join(retried))
+        except Exception:
+            logger.exception("Retry rate-limited jobs failed")
+
         # ── Job Probe tick (background monitoring, never fails tick) ──
         try:
             from tools.job_probe import probe_tick

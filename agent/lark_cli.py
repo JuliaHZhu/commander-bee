@@ -24,7 +24,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Optional, Dict, Callable
 
-from worker_bee.agent import AIAgent
+from agent.agent import AIAgent
 
 # ── Config ──────────────────────────────────────────────────────────────────
 

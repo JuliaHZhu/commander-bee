@@ -27,37 +27,17 @@ import sys
 import threading
 from pathlib import Path
 
-from worker_bee.agent import AIAgent
-from worker_bee.memory import SessionDB
-from worker_bee.skills import SkillManager
-from worker_bee.registry import registry
-from worker_bee.infra_toolsets import InfraToolSet
-from worker_bee.deck import build_deck, Deck
+from agent.agent import AIAgent
+from agent.memory import SessionDB
+from agent.skills import SkillManager
+from agent.registry import registry
+from agent.infra_toolsets import InfraToolSet
+from agent.deck import build_deck, Deck, DeckManager
 
 VERSION = "0.1.1"
 
 _tick_stop = threading.Event()
 _tick_thread = None
-
-
-def _log_deck_usage(mode: str, tool_count: int, matched_skills: list):
-    """记录 Deck 使用情况到 JSONL 日志。"""
-    import json
-    from datetime import datetime
-    from pathlib import Path
-    
-    log_path = Path.home() / ".worker-bee" / "deck_log.jsonl"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    entry = {
-        "timestamp": datetime.now().isoformat(),
-        "mode": mode,
-        "tool_count": tool_count,
-        "matched_skills": matched_skills,
-    }
-    
-    with open(log_path, "a") as f:
-        f.write(json.dumps(entry) + "\n")
 
 
 def _cron_tick_loop(config: dict, skill_mgr):
@@ -95,6 +75,8 @@ def load_config():
 
 
 def _make_config(provider, model, api_key, base_url, max_iter=60, temperature=0.0):
+    import socket
+    default_bee_id = socket.gethostname().lower().replace(".", "-")
     return {
         "model": model,
         "provider": provider,
@@ -103,6 +85,7 @@ def _make_config(provider, model, api_key, base_url, max_iter=60, temperature=0.
         "max_iterations": max_iter,
         "temperature": temperature,
         "auto_confirm": False,
+        "bee_id": default_bee_id,
         "system_prompt": (
             "You are a helpful coding assistant. You have access to tools:\n"
             "- sys_terminal: run shell commands\n"
@@ -167,12 +150,19 @@ def setup():
     except ValueError:
         temperature = 0.0
 
+    # Bee ID (for swarm identification)
+    import socket
+    default_bee = socket.gethostname().lower().replace(".", "-")
+    print()
+    bee_id = input(f"Bee ID (for swarm) [{default_bee}]: ").strip() or default_bee
+
     # Lark / Feishu write permission
     print()
     lark_write = input("Allow lark-cli write operations? (send messages, upload files, edit docs) [y/N]: ").strip().lower()
     lark_allow_write = lark_write == "y"
 
     config = _make_config(provider, model, key, base, temperature=temperature)
+    config["bee_id"] = bee_id
     config["lark_allow_write"] = lark_allow_write
     path = get_config_path()
     with open(path, "w") as f:
@@ -408,6 +398,7 @@ def run_session(temperature_override: float | None = None):
     db = SessionDB()
     skill_mgr = SkillManager()
     infra = InfraToolSet()
+    deck_mgr = DeckManager(config.get("tools", []), registry)
 
     base_system_prompt = agent.system_prompt
 
@@ -420,6 +411,8 @@ def run_session(temperature_override: float | None = None):
     if plat != "linux":
         available = infra.get_available_tools()
         print(f"Infra tools: {', '.join(available) if available else 'none'}")
+    print()
+    print(f"Deck mode: {deck_mgr.mode}  (use /deck to manage)")
     print()
 
     # Start cron scheduler in background
@@ -529,6 +522,9 @@ def run_session(temperature_override: float | None = None):
             print(f"Handoff exported to: {path}")
             print("  Start a new session with: worker-bee --continue <path>")
             continue
+        if user_input.lower().startswith("/deck"):
+            _handle_deck(user_input, deck_mgr)
+            continue
 
         # --- Deck procurement: gather tools BEFORE execution ---
         print("  [Procuring deck...]", flush=True)
@@ -541,28 +537,10 @@ def run_session(temperature_override: float | None = None):
         # 2. Collect tools from matched skills
         skill_tools = skill_mgr.get_tools_for_skills(matched_skills)
 
-        # 3. Deck mode detection: focus mode if skills matched, full mode otherwise
-        deck_mode = config.get("deck_mode", "auto")  # auto | full | focus
-        
-        if deck_mode == "full" or (deck_mode == "auto" and not matched_skills):
-            # 全工具模式：config.tools 是完整工具集
-            base_tools = config.get("tools", [])
-            final_tools = infra.filter_tools(base_tools)
-            deck = Deck(final_tools, registry)
-            print(f"  [Deck ready: {deck.size()} tools (full mode)]")
-        else:
-            # Deck 专注模式：只加载 skill 工具 + 冗余槽
-            deck = build_deck(skill_tools, registry, redundancy=3)
-            final_tools = infra.filter_tools(deck.tools)
-            deck = Deck(final_tools, registry)
-            print(f"  [Deck ready: {deck.size()} tools (focus mode)]")
+        # 3. Build deck via DeckManager (dual-mode: full / focus)
+        deck = deck_mgr.procure(skill_tools, infra.filter_tools)
 
-        # Log deck usage
-        _log_deck_usage(
-            mode="full" if (deck_mode == "full" or (deck_mode == "auto" and not matched_skills)) else "focus",
-            tool_count=deck.size(),
-            matched_skills=matched_skills,
-        )
+        print(f"  [Deck ready: {deck.size()} tools]  (mode: {deck_mgr.mode})")
 
         # --- Dynamic context injection for skill-authoring skills ---
         skill_context = skill_mgr.build_context_for_skills(matched_skills)
@@ -723,13 +701,45 @@ def _make_handoff(messages) -> str:
     return " | ".join(parts) if parts else ""
 
 
+def _handle_deck(cmd: str, deck_mgr: DeckManager):
+    """Handle /deck subcommands in interactive session."""
+    parts = cmd.split()
+    if len(parts) == 1:
+        # /deck alone — show status
+        tools = deck_mgr.list_tools()
+        print(f"Mode: {deck_mgr.mode}")
+        print(f"Tools ({len(tools)}): {', '.join(tools) if tools else '(none)'}")
+        return
+    sub = parts[1].lower()
+    if sub == "mode":
+        print(f"Current mode: {deck_mgr.mode}")
+    elif sub == "full":
+        print(deck_mgr.set_mode("full"))
+    elif sub == "focus":
+        print(deck_mgr.set_mode("focus"))
+    elif sub == "add" and len(parts) == 3:
+        print(deck_mgr.add_tool(parts[2]))
+    elif sub == "drop" and len(parts) == 3:
+        print(deck_mgr.drop_tool(parts[2]))
+    elif sub == "reset":
+        print(deck_mgr.reset())
+    elif sub == "list":
+        tools = deck_mgr.list_tools()
+        print(f"Tools ({len(tools)}): {', '.join(tools) if tools else '(none)'}")
+    elif sub == "log":
+        log = deck_mgr.get_log()
+        print(json.dumps(log, ensure_ascii=False, indent=2))
+    else:
+        print("Usage: /deck [mode|full|focus|add <tool>|drop <tool>|reset|list|log]")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="worker-bee",
         description="Lightweight AI agent with tool access.",
         add_help=False,
     )
-    parser.add_argument("command", nargs="?", choices=["setup", "config"], help="Command")
+    parser.add_argument("command", nargs="?", choices=["setup", "config", "retry-rate-limited"], help="Command")
     parser.add_argument("config_args", nargs="*", help="Extra args for config command")
     parser.add_argument("-m", "--model-ping", metavar="MSG", help="Quick model ping test")
     parser.add_argument("-c", "--channel-ping", metavar="MSG", help="Quick channel ping test (Feishu/Discord)")
@@ -750,6 +760,7 @@ Usage:
   worker-bee setup              Configure API key and model
   worker-bee config             Show current config
   worker-bee config key value   Update a config value
+  worker-bee retry-rate-limited Immediately retry all rate-limited jobs
   worker-bee -m "hello"         Quick model connectivity test
   worker-bee -c "hello"         Quick channel connectivity test
   worker-bee -t 0.5             Start session with temperature override
@@ -786,6 +797,16 @@ Interactive commands:
 
     if args.command == "config":
         config_cmd(args.config_args)
+        return
+
+    if args.command == "retry-rate-limited":
+        from cron.jobs import retry_rate_limited_jobs, get_rate_limited_jobs
+        pending = get_rate_limited_jobs()
+        if not pending:
+            print("API 正常，无待恢复任务。")
+            return
+        retried = retry_rate_limited_jobs()
+        print(f"已恢复 {len(retried)} 个因限流暂停的任务，下个 tick 执行。")
         return
 
     # Default: run interactive session

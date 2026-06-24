@@ -26,7 +26,7 @@ SKILLS_DIR = Path(__file__).parent.parent / "skills"
 _sys_path_guard = str(Path(__file__).parent.parent)
 if _sys_path_guard not in sys.path:
     sys.path.insert(0, _sys_path_guard)
-from worker_bee.skills import _parse_yamlish  # noqa: E402
+from agent.skills import _parse_yamlish  # noqa: E402
 
 # ── Import tools to trigger registration (needed for registry check) ─
 # When running standalone, tool modules haven't been imported yet, so registry
@@ -126,7 +126,7 @@ def check_trigger_conflicts(all_skills: Dict[str, dict]) -> List[str]:
 def check_tool_existence(tools: List[str]) -> List[str]:
     """Check if declared tools exist in registry. Graceful if no registry."""
     try:
-        from worker_bee.registry import registry
+        from agent.registry import registry
         missing = []
         for t in tools:
             if not registry.has_tool(t):
@@ -316,7 +316,7 @@ def skill_audition(target: str = "all", verbose: bool = False) -> str:
 
 # Auto-register when imported
 try:
-    from worker_bee.registry import registry
+    from agent.registry import registry
     registry.register(
         name="skill_audition",
         description=(

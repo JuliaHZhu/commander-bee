@@ -23,7 +23,7 @@ import time
 import urllib.request
 from typing import Optional
 
-from worker_bee.registry import registry
+from agent.registry import registry
 
 # ── Feishu App Bot state (minimal in-memory cache) ─────────────────────────────
 _FEISHU_TOKEN_CACHE: Optional[dict] = None

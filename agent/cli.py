@@ -90,7 +90,7 @@ def _job_run(args):
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
     from tools.job_probe import _read_meta, _ensure_job_dir, _append_event, _atomic_write
-    from worker_bee.registry import registry
+    from agent.registry import registry
 
     job_id = args.job_id
     meta, body = _read_meta(job_id)
@@ -441,7 +441,7 @@ def _add_swarm_parser(sub):
 # Workspace sub-command
 # ---------------------------------------------------------------------------
 def _workspace_show(args):
-    from worker_bee.workspace import get_workspace
+    from agent.workspace import get_workspace
     print(get_workspace())
 
 
@@ -704,101 +704,118 @@ def _add_lark_parser(sub):
 
 def _lark_serve(args):
     """Start the Feishu Lark webhook server."""
-    from worker_bee.lark_cli import run_server
+    from agent.lark_cli import run_server
     run_server(port=args.port)
 
 
 # ---------------------------------------------------------------------------
 # Deck sub-command
 # ---------------------------------------------------------------------------
-def _add_deck_parser(sub):
-    """wb deck — Deck 模式控制。"""
-    deck_sub = sub.add_parser("deck", help="Deck mode control")
-    deck_cmds = deck_sub.add_subparsers(dest="deck_cmd", required=True)
-
-    # deck mode
-    p = deck_cmds.add_parser("mode", help="Set deck mode (auto|full|focus)")
-    p.add_argument("value", choices=["auto", "full", "focus"], help="Deck mode")
-    p.set_defaults(func=_deck_mode)
-
-    # deck status
-    p = deck_cmds.add_parser("status", help="Show current deck mode")
-    p.set_defaults(func=_deck_status)
-
-    # deck log
-    p = deck_cmds.add_parser("log", help="Show deck usage log")
-    p.add_argument("--limit", type=int, default=10, help="Number of entries to show")
-    p.set_defaults(func=_deck_log)
-
-
 def _deck_mode(args):
-    """Set deck mode in config."""
-    import json
-    from pathlib import Path
-    
-    config_path = Path.home() / ".worker-bee" / "config.json"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    if config_path.exists():
-        with open(config_path) as f:
-            config = json.load(f)
-    else:
-        config = {}
-    
-    config["deck_mode"] = args.value
-    
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
-    
-    print(f"Deck mode set to: {args.value}")
+    from agent.main import load_config
+    from agent.deck import DeckManager
+    from agent.registry import registry
+    cfg = load_config() or {}
+    dm = DeckManager(cfg.get("tools", []), registry)
+    print(f"Mode: {dm.mode}")
+    tools = dm.list_tools()
+    print(f"Tools ({len(tools)}): {', '.join(tools) if tools else '(none)'}")
 
 
-def _deck_status(args):
-    """Show current deck mode."""
-    import json
-    from pathlib import Path
-    
-    config_path = Path.home() / ".worker-bee" / "config.json"
-    
-    if config_path.exists():
-        with open(config_path) as f:
-            config = json.load(f)
-        mode = config.get("deck_mode", "auto")
-    else:
-        mode = "auto"
-    
-    print(f"Current deck mode: {mode}")
-    print()
-    print("Modes:")
-    print("  auto  - Full mode when no skills matched, focus mode otherwise (default)")
-    print("  full  - Always use all config.tools")
-    print("  focus - Always use skill tools + redundancy only")
+def _deck_full(args):
+    from agent.main import load_config
+    from agent.deck import DeckManager
+    from agent.registry import registry
+    cfg = load_config() or {}
+    dm = DeckManager(cfg.get("tools", []), registry)
+    print(dm.set_mode("full"))
+
+
+def _deck_focus(args):
+    from agent.main import load_config
+    from agent.deck import DeckManager
+    from agent.registry import registry
+    cfg = load_config() or {}
+    dm = DeckManager(cfg.get("tools", []), registry)
+    print(dm.set_mode("focus"))
+
+
+def _deck_add(args):
+    from agent.main import load_config
+    from agent.deck import DeckManager
+    from agent.registry import registry
+    cfg = load_config() or {}
+    dm = DeckManager(cfg.get("tools", []), registry)
+    print(dm.add_tool(args.tool))
+
+
+def _deck_drop(args):
+    from agent.main import load_config
+    from agent.deck import DeckManager
+    from agent.registry import registry
+    cfg = load_config() or {}
+    dm = DeckManager(cfg.get("tools", []), registry)
+    print(dm.drop_tool(args.tool))
+
+
+def _deck_reset(args):
+    from agent.main import load_config
+    from agent.deck import DeckManager
+    from agent.registry import registry
+    cfg = load_config() or {}
+    dm = DeckManager(cfg.get("tools", []), registry)
+    print(dm.reset())
+
+
+def _deck_list(args):
+    from agent.main import load_config
+    from agent.deck import DeckManager
+    from agent.registry import registry
+    cfg = load_config() or {}
+    dm = DeckManager(cfg.get("tools", []), registry)
+    tools = dm.list_tools()
+    print(f"Tools ({len(tools)}): {', '.join(tools) if tools else '(none)'}")
 
 
 def _deck_log(args):
-    """Show deck usage log."""
-    from pathlib import Path
     import json
-    
-    log_path = Path.home() / ".worker-bee" / "deck_log.jsonl"
-    
-    if not log_path.exists():
-        print("No deck log found.")
-        return
-    
-    with open(log_path) as f:
-        lines = f.readlines()
-    
-    entries = [json.loads(line) for line in lines[-args.limit:]]
-    
-    print(f"Last {len(entries)} deck operations:")
-    print()
-    for entry in entries:
-        ts = entry.get("timestamp", "?")
-        mode = entry.get("mode", "?")
-        tools = entry.get("tool_count", "?")
-        skills = ", ".join(entry.get("matched_skills", []))
-        print(f"{ts} | {mode:8s} | {tools:2d} tools | skills: {skills or '(none)'}")
+    from agent.main import load_config
+    from agent.deck import DeckManager
+    from agent.registry import registry
+    cfg = load_config() or {}
+    dm = DeckManager(cfg.get("tools", []), registry)
+    print(json.dumps(dm.get_log(), ensure_ascii=False, indent=2))
+
+
+def _add_deck_parser(sub):
+    deck = sub.add_parser("deck", help="Deck management — tool boundary control")
+    deck_sub = deck.add_subparsers(dest="deck_cmd", required=True)
+
+    p = deck_sub.add_parser("mode", help="Show current deck mode and tools")
+    p.set_defaults(func=_deck_mode)
+
+    p = deck_sub.add_parser("full", help="Switch to full-tool mode")
+    p.set_defaults(func=_deck_full)
+
+    p = deck_sub.add_parser("focus", help="Switch to focus mode")
+    p.set_defaults(func=_deck_focus)
+
+    p = deck_sub.add_parser("add", help="Add a tool to current deck")
+    p.add_argument("tool")
+    p.set_defaults(func=_deck_add)
+
+    p = deck_sub.add_parser("drop", help="Remove a tool from current deck")
+    p.add_argument("tool")
+    p.set_defaults(func=_deck_drop)
+
+    p = deck_sub.add_parser("reset", help="Reset deck and re-match skills")
+    p.set_defaults(func=_deck_reset)
+
+    p = deck_sub.add_parser("list", help="List tools in current deck")
+    p.set_defaults(func=_deck_list)
+
+    p = deck_sub.add_parser("log", help="Show deck usage statistics")
+    p.set_defaults(func=_deck_log)
 
 
 # ---------------------------------------------------------------------------
@@ -825,6 +842,9 @@ def main(argv=None):
             "  wb lark who 张三\n"
             "  wb lark chats\n"
             "  wb lark send --to 张三 hello\n"
+            "  wb deck mode\n"
+            "  wb deck focus\n"
+            "  wb deck add fs_write_file\n"
         ),
     )
     sub = parser.add_subparsers(dest="cmd", required=True)

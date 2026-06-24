@@ -3,7 +3,7 @@ import re
 import urllib.request
 import urllib.parse
 from urllib.parse import urlparse
-from worker_bee.registry import registry
+from agent.registry import registry
 
 
 # ── SSRF / protocol guard ──────────────────────────────────────────────

@@ -42,5 +42,10 @@ todo_ball_machine/test_heartbeat_log.json
 
 # Job board runtime data
 jobs/
+commander-jobs/*/artifacts/
+commander-jobs/*/events.jsonl
+commander-jobs/*/review.md
+commander-jobs/*/intervention.md
+monitor.log
 venv_tmp/
 .venv/

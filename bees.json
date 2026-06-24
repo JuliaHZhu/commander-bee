@@ -1,0 +1,28 @@
+[
+  {
+    "bee_id": "bee-mac",
+    "hostname": "MacBook-Pro.local",
+    "status": "alive",
+    "skills": [
+      "paper-lesson-generator",
+      "paper-contributor-network",
+      "lark-messaging"
+    ],
+    "max_concurrent": 3,
+    "current_jobs": [],
+    "last_heartbeat": "2026-06-24T12:30:00Z"
+  },
+  {
+    "bee_id": "bee-linux",
+    "hostname": "ubuntu-server",
+    "status": "alive",
+    "skills": [
+      "paper-lesson-generator",
+      "paper-contributor-network",
+      "lark-messaging"
+    ],
+    "max_concurrent": 5,
+    "current_jobs": [],
+    "last_heartbeat": "2026-06-24T20:00:00Z"
+  }
+]

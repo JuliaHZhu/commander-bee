@@ -79,8 +79,7 @@ Commander Bee 依赖 Cronjob 实现自动化监控：
 {
   "heartbeat-monitor": "every 60s",   // 检查 Bee 心跳
   "dispatch-scan": "every 120s",      // 扫描 created job 自动派发
-  "timeout-check": "every 300s",      // 检查超时 job 介入回收
-  "daily-report": "0 9 * * *"         // 每日周报
+  "timeout-check": "every 300s"       // 检查超时 job 介入回收
 }
 ```
 
@@ -161,12 +160,7 @@ commander-bee cron start
 - [ ] 超时回收逻辑（job_accept / job_execute）
 - [ ] blocked 消息处理
 
-### Phase 3: 人类友好界面
-- [ ] 实现 `commander-report` Skill
-- [ ] 每日周报 Cronjob
-- [ ] Web dashboard（可选，后期）
-
-### Phase 4: WorldBee 接管
+### Phase 3: WorldBee 接管
 - [ ] WorldBee 负责 job 文件的物理投放
 - [ ] CommanderBee 只发敲门铃（subject + job_id）
 - [ ] 信息素驱动的自动派发

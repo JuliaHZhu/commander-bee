@@ -1,6 +1,6 @@
 ---
 name: create-mechanism-skill
-description: Use when creating a skill that requires custom Python tooling, state persistence, or data management. For backend-engine skills like todo-ball-machine.
+description: Use when creating a skill that requires custom Python tooling, state persistence, or data management. For backend-engine skills like job-probe, swarm-listener, or any stateful tool module.
 trigger: create mechanism skill, build system skill, skill with state, custom tool skill, persistent data skill, 创建机制skill, 有状态的skill, 底层skill, 带数据持久化的skill
 tools:
   - fs_read_file

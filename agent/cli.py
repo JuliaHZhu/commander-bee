@@ -2,7 +2,7 @@
 """
 wb — WorkerBee unified CLI.
 
-Direct command-line access to job-probe and todo-ball-machine,
+Direct command-line access to job-probe,
 without routing through the agent loop.
 
 Usage:
@@ -12,18 +12,6 @@ Usage:
     wb job handoff JOB-001
     wb job audit JOB-001
     wb job tick
-
-    wb todo dashboard
-    wb todo today
-    wb todo draw morning
-    wb todo quick
-    wb todo complete morning
-    wb todo history [N]
-    wb todo stats [N]
-    wb todo day [YYYY-MM-DD]
-    wb todo box
-    wb todo cycle
-    wb todo new-cycle [name]
 """
 
 import argparse
@@ -248,111 +236,6 @@ def _add_job_parser(sub):
     p = job_sub.add_parser("run", help="Execute a job (auto-detect skill and run)")
     p.add_argument("job_id")
     p.set_defaults(func=_job_run)
-
-
-# ---------------------------------------------------------------------------
-# Todo sub-command
-# ---------------------------------------------------------------------------
-def _todo_dashboard(args):
-    from tools.todo_ball_machine import todo_ball_machine
-    print(todo_ball_machine(action="dashboard"))
-
-
-def _todo_today(args):
-    from tools.todo_ball_machine import todo_ball_machine
-    print(todo_ball_machine(action="today"))
-
-
-def _todo_draw(args):
-    from tools.todo_ball_machine import todo_ball_machine
-    print(todo_ball_machine(action="draw", session=args.session))
-
-
-def _todo_quick(args):
-    from tools.todo_ball_machine import todo_ball_machine
-    print(todo_ball_machine(action="quick_draw"))
-
-
-def _todo_complete(args):
-    from tools.todo_ball_machine import todo_ball_machine
-    print(todo_ball_machine(action="complete", session=args.session))
-
-
-def _todo_history(args):
-    from tools.todo_ball_machine import todo_ball_machine
-    n = str(args.days) if args.days else None
-    print(todo_ball_machine(action="history", content=n))
-
-
-def _todo_stats(args):
-    from tools.todo_ball_machine import todo_ball_machine
-    n = str(args.days) if args.days else None
-    print(todo_ball_machine(action="stats", content=n))
-
-
-def _todo_day(args):
-    from tools.todo_ball_machine import todo_ball_machine
-    d = args.date or None
-    print(todo_ball_machine(action="day", content=d))
-
-
-def _todo_box(args):
-    from tools.todo_ball_machine import todo_ball_machine
-    print(todo_ball_machine(action="box_list"))
-
-
-def _todo_cycle(args):
-    from tools.todo_ball_machine import todo_ball_machine
-    print(todo_ball_machine(action="cycle_status"))
-
-
-def _todo_new_cycle(args):
-    from tools.todo_ball_machine import todo_ball_machine
-    print(todo_ball_machine(action="new_cycle", content=args.name))
-
-
-def _add_todo_parser(sub):
-    todo = sub.add_parser("todo", help="Todo Ball Machine commands")
-    todo_sub = todo.add_subparsers(dest="todo_cmd", required=True)
-
-    p = todo_sub.add_parser("dashboard", aliases=["d"], help="System dashboard")
-    p.set_defaults(func=_todo_dashboard)
-
-    p = todo_sub.add_parser("today", aliases=["t"], help="Today's sessions")
-    p.set_defaults(func=_todo_today)
-
-    p = todo_sub.add_parser("draw", help="Draw a session (morning/afternoon/evening/overtime)")
-    p.add_argument("session")
-    p.set_defaults(func=_todo_draw)
-
-    p = todo_sub.add_parser("quick", aliases=["q"], help="Quick draw three sessions")
-    p.set_defaults(func=_todo_quick)
-
-    p = todo_sub.add_parser("complete", aliases=["done"], help="Mark session complete")
-    p.add_argument("session")
-    p.set_defaults(func=_todo_complete)
-
-    p = todo_sub.add_parser("history", aliases=["h"], help="History (default 7 days)")
-    p.add_argument("days", nargs="?", type=int, default=7)
-    p.set_defaults(func=_todo_history)
-
-    p = todo_sub.add_parser("stats", aliases=["s"], help="Stats report (default 7 days)")
-    p.add_argument("days", nargs="?", type=int, default=7)
-    p.set_defaults(func=_todo_stats)
-
-    p = todo_sub.add_parser("day", help="Detail for a specific date (YYYY-MM-DD)")
-    p.add_argument("date", nargs="?", default=None)
-    p.set_defaults(func=_todo_day)
-
-    p = todo_sub.add_parser("box", aliases=["b"], help="Box quota list")
-    p.set_defaults(func=_todo_box)
-
-    p = todo_sub.add_parser("cycle", aliases=["c"], help="Cycle status")
-    p.set_defaults(func=_todo_cycle)
-
-    p = todo_sub.add_parser("new-cycle", help="Start a new cycle")
-    p.add_argument("name", nargs="?", default=None)
-    p.set_defaults(func=_todo_new_cycle)
 
 
 # ---------------------------------------------------------------------------
@@ -849,7 +732,6 @@ def main(argv=None):
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
     _add_job_parser(sub)
-    _add_todo_parser(sub)
     _add_swarm_parser(sub)
     _add_workspace_parser(sub)
     _add_lark_parser(sub)

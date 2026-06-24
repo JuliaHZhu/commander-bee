@@ -37,13 +37,12 @@ test = [
 ]
 
 [tool.setuptools]
-packages = ["agent", "cron", "tools", "todo_ball_machine"]
+packages = ["agent", "cron", "tools"]
 
 [tool.setuptools.package-data]
 agent = ["*.py", "skills/*.md"]
 cron = ["*.py"]
 tools = ["*.py"]
-todo_ball_machine = ["*.py", "*.json", "*.md"]
 skills = ["*.md"]
 templates = ["*.md"]
 jobs = ["*.md", "*.json"]

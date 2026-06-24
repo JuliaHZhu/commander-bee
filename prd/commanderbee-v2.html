@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CommanderBee 完整设计 v2</title>
+<style>
+:root{--bg:#fdfbf7;--text:#2c2416;--accent:#8b4513;--border:#c4a882;--code-bg:#f5f0e8}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Noto Serif SC","STSong",serif;line-height:1.85;color:var(--text);background:var(--bg);max-width:820px;margin:0 auto;padding:40px 24px}
+h1{font-size:1.6rem;text-align:center;margin-bottom:4px;color:#6b3410}
+.subtitle{text-align:center;font-size:.9rem;color:#8b7355;margin-bottom:32px}
+.back{text-align:center;font-size:.85rem;margin-bottom:16px}
+.back a{color:var(--accent);text-decoration:none}
+h2{font-size:1.25rem;color:#6b3410;border-bottom:1px solid var(--border);padding-bottom:4px;margin:40px 0 16px}
+h3{font-size:1.05rem;color:var(--accent);margin:24px 0 10px}
+p{margin:10px 0;font-size:.93rem}
+strong{color:#6b3410}
+code{background:var(--code-bg);padding:1px 5px;border-radius:3px;font-size:.88em}
+pre{background:var(--code-bg);padding:14px 18px;border-radius:6px;border:1px solid var(--border);overflow-x:auto;margin:12px 0;font-size:.83rem;line-height:1.55}
+pre code{padding:0;background:none}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.9rem}
+th{background:#f0e8d8;text-align:left;padding:8px 12px;border:1px solid var(--border);font-weight:bold}
+td{padding:8px 12px;border:1px solid var(--border);vertical-align:top}
+tr:nth-child(even) td{background:#fdfaf5}
+.tag{display:inline-block;background:#f0e8d8;color:#8b7355;padding:1px 8px;border-radius:10px;font-size:.78em;margin-left:6px}
+.takeaway{background:#faf3e4;border-left:3px solid var(--accent);padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:.9rem}
+ul,ol{margin:8px 0 8px 20px;font-size:.93rem}
+li{margin:5px 0}
+.footer{text-align:center;margin-top:48px;padding-top:16px;border-top:1px solid var(--border);font-size:.82rem;color:#c4a882}
+.diagram{background:#fdfaf5;border:2px solid var(--border);border-radius:8px;padding:20px;margin:16px 0;font-family:"SF Mono","Menlo",monospace;font-size:.8rem;line-height:1.6;white-space:pre;overflow-x:auto}
+.section{background:#fdfaf5;border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin:16px 0}
+</style>
+</head>
+<body>
+<p class="back"><a href="index.html">← Worker Bee</a></p>
+<h1>CommanderBee 完整设计 v2</h1>
+<p class="subtitle">排班经理 + 来料验收 + 蜂群协调 · 基于 Worker Bee 五层架构</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>一、核心定位</h2>
+
+<p>CommanderBee 是一个<strong>完整的 Worker Bee</strong>，共享五层工厂架构，但专注于监工和派发：</p>
+
+<table>
+  <tr><th>维度</th><th>Worker Bee</th><th>CommanderBee</th></tr>
+  <tr><td>架构</td><td>五层工厂（完整）</td><td>五层工厂（完整）</td></tr>
+  <tr><td>协议内核</td><td>protocols.py + loop.py</td><td>protocols.py + loop.py（复用）</td></tr>
+  <tr><td>Deck 机制</td><td>按 Skill 动态装填</td><td>按 Skill 动态装填</td></tr>
+  <tr><td>主要职能</td><td>执行任务</td><td>派发任务 + 验收成果</td></tr>
+  <tr><td>LLM 用途</td><td>推理 + 工具调用</td><td>汇总汇报 + 验收判断</td></tr>
+  <tr><td>专属 Skill</td><td>lark-messaging, code-review...</td><td>commander-dispatch, commander-acceptance...</td></tr>
+  <tr><td>NATS 角色</td><td>接收任务 + 汇报状态</td><td>派发任务 + 监控心跳</td></tr>
+</table>
+
+<p class="takeaway"><strong>关键洞察：</strong>CommanderBee <strong>不是一个独立的新框架</strong>。它是 Worker Bee 的一个特殊实例，通过不同的 Skill 集合和 Cronjob 配置，实现监工职能。</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>二、架构复用</h2>
+
+<h3>共享的五层</h3>
+
+<div class="diagram">
+五层：蜂群装备（NATS + Cron + Job Probe + SessionDB）
+  ↓
+四层：Agent 外壳（~/.commander-bee/ 配置）
+  ↓
+三层：协议内核（protocols.py + loop.py）
+  ↓
+二层：工具边界（Deck + Registry + Skills）
+  ↓
+一层：工具实现（swarm, file, terminal...）
+</div>
+
+<h3>差异点</h3>
+
+<table>
+  <tr><th>组件</th><th>Worker Bee</th><th>CommanderBee</th></tr>
+  <tr><td>配置目录</td><td><code>~/.worker-bee/</code></td><td><code>~/.commander-bee/</code></td></tr>
+  <tr><td>Skills 目录</td><td><code>skills/</code></td><td><code>skills/</code>（共享） + <code>commander-skills/</code></td></tr>
+  <tr><td>agent.md</td><td>执行者人格</td><td>监工人格</td></tr>
+  <tr><td>soul.md</td><td>友好助手</td><td>公正裁判</td></tr>
+  <tr><td>Job 目录</td><td><code>jobs/</code>（接单）</td><td><code>commander-jobs/</code>（派单池）</td></tr>
+  <tr><td>Cronjob</td><td>自用定时任务</td><td>心跳监控 + 派发扫描 + 超时介入</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>三、LLM 使用边界</h2>
+
+<p>CommanderBee 是<strong>规则为主、LLM 为辅</strong>的混合架构：</p>
+
+<table>
+  <tr><th>场景</th><th>用什么</th><th>示例</th></tr>
+  <tr>
+    <td>Skill 匹配</td>
+    <td>纯规则</td>
+    <td><code>required_skills: [hayes-method-reviewer]</code> → 查 <code>bees.json</code> 的 skills 列表</td>
+  </tr>
+  <tr>
+    <td>Bee 筛选</td>
+    <td>纯规则</td>
+    <td><code>status=alive + current_jobs < max_concurrent</code></td>
+  </tr>
+  <tr>
+    <td>超时回收</td>
+    <td>纯规则</td>
+    <td><code>job_accept 超时 + bee silent</code> → 清空 owner</td>
+  </tr>
+  <tr>
+    <td>成果验收</td>
+    <td><strong>LLM</strong></td>
+    <td>读 <code>acceptance: 三页互链完整 + 论证链清晰</code> + Worker 提交的 artifacts → 判断是否合格</td>
+  </tr>
+  <tr>
+    <td>多任务汇总</td>
+    <td><strong>LLM</strong></td>
+    <td>100 个 job 的状态 → 生成人类可读的周报</td>
+  </tr>
+  <tr>
+    <td>blocked 介入</td>
+    <td><strong>LLM</strong></td>
+    <td>Worker 说"缺原文 PDF" → 判断：重派 / 等人工 / 修改 job</td>
+  </tr>
+  <tr>
+    <td>字数硬阈值</td>
+    <td>纯规则</td>
+    <td>字数 < 一半 → 自动重派（不问 LLM）</td>
+  </tr>
+</table>
+
+<p class="takeaway"><strong>分界线：</strong>凡是能写成 <code>if-else</code> 的，用规则。凡是需要"理解语义"的（验收标准、汇总报告、blocked 原因分析），用 LLM。</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>四、专属 Skill 清单</h2>
+
+<h3>1. commander-dispatch</h3>
+<pre><code>---
+name: commander-dispatch
+description: 派发任务到 Worker Bee 蜂群
+triggers:
+  - 派发
+  - 分配任务
+  - dispatch job
+tools:
+  - fs_read_file      # 读 job meta.md
+  - swarm_publish     # 发 swarm.task.new-job
+  - fs_write_file     # 更新 job owner + phase
+---
+
+## 职责
+
+读取 commander-jobs/ 下的 created 状态 job，匹配 Bee 能力，派发。
+
+## 派发规则
+
+1. 读 job frontmatter: `required_skills`
+2. 读 bees.json: 筛选 `skills` 包含 required_skills
+3. 筛选 `status=alive + current_jobs < max_concurrent`
+4. 优先级：last_heartbeat 最近的（最近活跃优先）
+5. 写入 `owner` + `phase=dispatched` → NATS 发 `swarm.task.new-job`
+
+## 无匹配时
+
+留在 created，等人加 Bee 或加 skill。不强行派发。
+</code></pre>
+
+<h3>2. commander-acceptance</h3>
+<pre><code>---
+name: commander-acceptance
+description: 验收 Worker Bee 提交的成果
+triggers:
+  - 验收
+  - 审查结果
+  - check deliverables
+tools:
+  - fs_read_file
+  - fs_search_files
+  - swarm_publish
+---
+
+## 职责
+
+读 job 的 `acceptance` 标准，检查 Worker 提交的 artifacts。
+
+## 验收步骤
+
+1. 读 job meta.md: `acceptance` 字段（自然语言）
+2. 读 job artifacts/ 目录: 列出所有文件
+3. 读关键文件内容（lesson.html, notes.html...）
+4. 判断：
+   - ✅ Pass: 完全符合 acceptance
+   - ⚠️ Needs work: 缺少部分内容，可补救
+   - ❌ Incomplete: 严重不符，需重做
+
+## 硬阈值（不问 LLM）
+
+- 字数 < 一半 → 自动 ❌ + 重派
+- 文件缺失（约定 3 个文件，只有 1 个）→ 自动 ❌
+
+## 输出
+
+写入 job `phase=reviewed` + 验收报告 → NATS 通知用户
+</code></pre>
+
+<h3>3. commander-monitor</h3>
+<pre><code>---
+name: commander-monitor
+description: 监控 Bee 心跳和 job 超时
+triggers:
+  - 监控
+  - check status
+  - monitor bees
+tools:
+  - fs_read_file
+  - fs_write_file
+  - swarm_publish
+---
+
+## 职责
+
+扫描 bees.json + commander-jobs/，检测超时和阻塞。
+
+## 检测规则
+
+1. **Bee 心跳超时**（默认 2 分钟）
+   - last_heartbeat 超时 → 标记 `status=silent`
+   - 如果有 current_jobs → 回收 job（清空 owner）
+
+2. **Job accept 超时**（默认 10 分钟）
+   - phase=dispatched + 10 分钟没收到 job-started → 可能 Bee 停机
+   - 清空 owner → phase=created
+
+3. **Job execute 超时**（默认 4 小时）
+   - phase=executing + 4 小时没收到 job-done → 可能卡住
+   - 发 `swarm.command.rescind`
+
+## 触发方式
+
+Cronjob 每 60 秒自动运行。
+</code></pre>
+
+<h3>4. commander-report</h3>
+<pre><code>---
+name: commander-report
+description: 汇总蜂群状态，生成人类可读报告
+triggers:
+  - 汇报
+  - 周报
+  - status report
+  - 看看进度
+tools:
+  - fs_read_file
+  - fs_search_files
+---
+
+## 职责
+
+读 commander-jobs/ 所有 job，生成汇总报告。
+
+## 报告格式
+
+### 蜂群状态
+- 在线 Bee：N 台（bee-mac, bee-linux...）
+- 繁忙 Bee：M 台
+- 离线 Bee：K 台（超时 > 2 分钟）
+
+### 任务进度
+- 待派发：X 个（created）
+- 执行中：Y 个（executing）
+- 已完成：Z 个（done）
+- 阻塞中：W 个（blocked）
+
+### 最近完成（Top 5）
+- JOB-047: 拆解论文 #047 · ✅ 2026-06-24 12:30
+- ...
+
+### 需要注意
+- JOB-048: 超时 4 小时，已介入
+- bee-linux: 心跳丢失 10 分钟
+
+## 触发方式
+
+- 用户问"看看进度" → 即时生成
+- Cronjob 每天 9:00 自动发送周报
+</code></pre>
+
+<h3>5. commander-intervention</h3>
+<pre><code>---
+name: commander-intervention
+description: 处理 Worker Bee 的 blocked 消息
+triggers:
+  - blocked
+  - 卡住了
+  - intervention
+tools:
+  - fs_read_file
+  - fs_write_file
+  - swarm_publish
+  - send_message
+---
+
+## 职责
+
+读 Worker 发来的 `swarm.event.blocked`，决定介入策略。
+
+## 介入决策（LLM）
+
+读 blocked reason + job meta + 当前环境 → 判断：
+
+1. **重新派发**
+   - reason: "Bee 能力不足"
+   - 清空 owner → phase=created → 等更强的 Bee
+
+2. **等人工**
+   - reason: "缺少原文 PDF"
+   - 发消息通知用户 → phase=blocked
+
+3. **修改 job**
+   - reason: "acceptance 标准不清晰"
+   - 建议用户明确标准
+
+4. **自动补救**
+   - reason: "依赖的 JOB-046 还没完成"
+   - 等 JOB-046 done 后自动重派
+
+## 输出
+
+介入记录写入 job events + NATS 通知用户
+</code></pre>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>五、Cronjob 配置</h2>
+
+<p>CommanderBee 依赖 Cronjob 实现自动化监控：</p>
+
+<pre><code># ~/.commander-bee/cron/jobs.json
+
+[
+  {
+    "id": "heartbeat-monitor",
+    "schedule": "every 60s",
+    "prompt": "检查 Bee 心跳，标记 silent 状态",
+    "skills": ["commander-monitor"],
+    "enabled": true
+  },
+  {
+    "id": "dispatch-scan",
+    "schedule": "every 120s",
+    "prompt": "扫描 created 状态的 job，自动派发",
+    "skills": ["commander-dispatch"],
+    "enabled": true
+  },
+  {
+    "id": "timeout-check",
+    "schedule": "every 300s",
+    "prompt": "检查超时 job，介入回收",
+    "skills": ["commander-monitor"],
+    "enabled": true
+  },
+  {
+    "id": "daily-report",
+    "schedule": "0 9 * * *",
+    "prompt": "生成昨日进度报告，发送给用户",
+    "skills": ["commander-report"],
+    "deliver": "origin",
+    "enabled": true
+  }
+]
+</code></pre>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>六、NATS 消息协议</h2>
+
+<p class="takeaway"><strong>✨ 2026-06-24 更新：</strong>NATS 已升级为 JetStream 持久化系统。消息保留90天，listener重启不丢消息，支持durable pull consumer。配置需添加 <code>server_name</code>（集群必需）。</p>
+
+<table>
+  <tr><th>方向</th><th>subject</th><th>payload</th><th>用途</th></tr>
+  <tr>
+    <td>CB → WB</td>
+    <td><code>swarm.task.new-job</code></td>
+    <td><code>{job_id, owner, meta_path}</code></td>
+    <td>派发新任务</td>
+  </tr>
+  <tr>
+    <td>CB → WB</td>
+    <td><code>swarm.command.rescind</code></td>
+    <td><code>{job_id, reason}</code></td>
+    <td>超时回收</td>
+  </tr>
+  <tr>
+    <td>CB → WB</td>
+    <td><code>swarm.command.amend</code></td>
+    <td><code>{job_id, field, new_value}</code></td>
+    <td>修改任务</td>
+  </tr>
+  <tr>
+    <td>WB → CB</td>
+    <td><code>swarm.event.job-started</code></td>
+    <td><code>{job_id, bee_id}</code></td>
+    <td>Worker 开始干活</td>
+  </tr>
+  <tr>
+    <td>WB → CB</td>
+    <td><code>swarm.event.job-done</code></td>
+    <td><code>{job_id, bee_id, summary}</code></td>
+    <td>Worker 完成任务</td>
+  </tr>
+  <tr>
+    <td>WB → CB</td>
+    <td><code>swarm.event.blocked</code></td>
+    <td><code>{job_id, bee_id, reason}</code></td>
+    <td>Worker 遇到阻塞</td>
+  </tr>
+  <tr>
+    <td>WB → CB</td>
+    <td><code>swarm.heartbeat.&lt;bee-id&gt;</code></td>
+    <td><code>{status, current_jobs, skills}</code></td>
+    <td>心跳 + 能力上报</td>
+  </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>七、目录结构</h2>
+
+<pre><code>~/.commander-bee/
+├── config.json              # 同 Worker Bee 格式
+├── agent.md                 # 监工人格
+├── soul.md                  # 公正裁判语气
+├── bees.json                # Bee 名录（心跳自动维护）
+├── commander-jobs/          # 派单池
+│   ├── JOB-047/
+│   │   ├── meta.md          # frontmatter: required_skills, acceptance...
+│   │   ├── events.jsonl     # 派发/回收/介入记录
+│   │   └── artifacts/       # Worker 交付物
+│   └── JOB-048/
+├── cron/
+│   └── jobs.json            # Cronjob 配置
+└── mailbox/
+    ├── inbox/               # NATS listener 写入
+    └── sent/                # 发出的重要消息副本
+</code></pre>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>八、与 Worker Bee 的差异总结</h2>
+
+<table>
+  <tr><th>维度</th><th>Worker Bee</th><th>CommanderBee</th></tr>
+  <tr>
+    <td>架构</td>
+    <td colspan="2">完全相同：五层工厂</td>
+  </tr>
+  <tr>
+    <td>配置目录</td>
+    <td><code>~/.worker-bee/</code></td>
+    <td><code>~/.commander-bee/</code></td>
+  </tr>
+  <tr>
+    <td>Job 目录</td>
+    <td><code>jobs/</code>（接收任务）</td>
+    <td><code>commander-jobs/</code>（派发任务）</td>
+  </tr>
+  <tr>
+    <td>Skill 集合</td>
+    <td>lark-messaging, code-review...</td>
+    <td>commander-dispatch, commander-acceptance...</td>
+  </tr>
+  <tr>
+    <td>LLM 用途</td>
+    <td>执行推理 + 工具调用</td>
+    <td>验收判断 + 汇总汇报</td>
+  </tr>
+  <tr>
+    <td>Cronjob</td>
+    <td>自用任务</td>
+    <td>心跳监控 + 派发扫描 + 超时介入</td>
+  </tr>
+  <tr>
+    <td>NATS 角色</td>
+    <td>接收 <code>swarm.task.*</code></td>
+    <td>发送 <code>swarm.task.*</code></td>
+  </tr>
+  <tr>
+    <td>人格</td>
+    <td>友好助手</td>
+    <td>公正监工</td>
+  </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>九、实施路径</h2>
+
+<div class="section">
+<h3>Phase 1: 最小可用版本（MVP）</h3>
+<ol>
+  <li>复制 Worker Bee 配置到 <code>~/.commander-bee/</code></li>
+  <li>写 3 个 Skill: <code>commander-dispatch</code>, <code>commander-monitor</code>, <code>commander-acceptance</code></li>
+  <li>写 <code>bees.json</code> 维护逻辑（心跳注册）</li>
+  <li>配置 2 个 Cronjob: 心跳监控 + 派发扫描</li>
+  <li>手动测试：创建 job → Commander 派发 → Worker 执行 → Commander 验收</li>
+</ol>
+</div>
+
+<div class="section">
+<h3>Phase 2: 自动化介入</h3>
+<ol>
+  <li>实现 <code>commander-intervention</code> Skill</li>
+  <li>超时回收逻辑（job_accept / job_execute）</li>
+  <li>blocked 消息处理</li>
+</ol>
+</div>
+
+<div class="section">
+<h3>Phase 3: 人类友好界面</h3>
+<ol>
+  <li>实现 <code>commander-report</code> Skill</li>
+  <li>每日周报 Cronjob</li>
+  <li>Web dashboard（可选，后期）</li>
+</ol>
+</div>
+
+<div class="section">
+<h3>Phase 4: WorldBee 接管</h3>
+<ol>
+  <li>WorldBee 负责 job 文件的物理投放</li>
+  <li>CommanderBee 只发敲门铃（subject + job_id）</li>
+  <li>信息素驱动的自动派发（不再需要 Commander 显式调用）</li>
+</ol>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>十、关键设计原则</h2>
+
+<table>
+  <tr><th>原则</th><th>含义</th></tr>
+  <tr>
+    <td><strong>架构复用</strong></td>
+    <td>CommanderBee = Worker Bee + 不同的 Skill 集合</td>
+  </tr>
+  <tr>
+    <td><strong>规则为主</strong></td>
+    <td>能写 if-else 的不用 LLM</td>
+  </tr>
+  <tr>
+    <td><strong>LLM 为辅</strong></td>
+    <td>验收、汇总、介入决策用 LLM</td>
+  </tr>
+  <tr>
+    <td><strong>唯一派单口</strong></td>
+    <td>只有 Commander 能发 <code>swarm.task.new-job</code></td>
+  </tr>
+  <tr>
+    <td><strong>Cronjob 驱动</strong></td>
+    <td>不需要 daemon，用 Cronjob 周期性唤醒</td>
+  </tr>
+  <tr>
+    <td><strong>Markdown 状态</strong></td>
+    <td>所有状态在文件里，人可读可编辑</td>
+  </tr>
+  <tr>
+    <td><strong>NATS 解耦</strong></td>
+    <td>Commander 和 Worker 只通过 NATS 通信</td>
+  </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>十一、待办事项</h2>
+
+<p class="takeaway"><strong>✅ 2026-06-24 完成：</strong>NATS系统已修复并同步到3个bee仓库（worker-bee, commander-bee, world-bee）。JetStream + datetime/Path导入 + server_name配置全部就绪。</p>
+
+<table>
+  <tr><th>#</th><th>项</th><th>优先级</th><th>状态</th></tr>
+  <tr><td>0</td><td>修复NATS系统：JetStream + datetime导入 + server_name</td><td>P0</td><td>✅ 完成</td></tr>
+  <tr><td>1</td><td>复制 Worker Bee 配置 → <code>~/.commander-bee/</code></td><td>P0</td><td>待做</td></tr>
+  <tr><td>2</td><td>写 <code>commander-dispatch</code> Skill</td><td>P0</td><td>待做</td></tr>
+  <tr><td>3</td><td>写 <code>commander-monitor</code> Skill</td><td>P0</td><td>待做</td></tr>
+  <tr><td>4</td><td>写 <code>commander-acceptance</code> Skill</td><td>P0</td><td>待做</td></tr>
+  <tr><td>5</td><td>实现 <code>bees.json</code> 心跳注册逻辑</td><td>P0</td><td>待做</td></tr>
+  <tr><td>6</td><td>配置 Cronjob: 心跳监控（60s）</td><td>P1</td><td>待做</td></tr>
+  <tr><td>7</td><td>配置 Cronjob: 派发扫描（120s）</td><td>P1</td><td>待做</td></tr>
+  <tr><td>8</td><td>手动测试完整流程</td><td>P1</td><td>待做</td></tr>
+  <tr><td>9</td><td>写 <code>commander-intervention</code> Skill</td><td>P2</td><td>待做</td></tr>
+  <tr><td>10</td><td>写 <code>commander-report</code> Skill</td><td>P2</td><td>待做</td></tr>
+  <tr><td>11</td><td>每日周报 Cronjob</td><td>P3</td><td>待做</td></tr>
+  <tr><td>12</td><td>WorldBee 接管物理投放</td><td>P3</td><td>待做</td></tr>
+</table>
+
+<div class="footer">
+  <p>2026-06-24 · 基于 Worker Bee 五层架构 · 边做边改</p>
+</div>
+</body>
+</html>
